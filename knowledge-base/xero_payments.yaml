@@ -1,0 +1,180 @@
+semantic_model:
+  name: payments
+  description: >
+    retrieve either one or many payments for invoices and credit notes, 
+    apply payments to approved AR and AP invoices, refund credit notes, 
+    delete (reverse) a payment, refund prepayments and overpayments, 
+    retrieve payment history, and add notes
+  grain: payment_id
+  business_keys:
+    - name: payment_id
+      column: payment_id
+  entities:
+    - name: payment
+      description: "a unique payment made towards an invoice, credit note, prepayment, or overpayment"
+      type: primary
+      exp: payment_id
+    - name: invoice
+      description: "the invoice associated with the payment"
+      type: foreign
+      exp: invoice_id
+    - name: credit_note
+      description: "the credit note associated with the payment"
+      type: foreign
+      exp: credit_note_id
+    - name: account
+      description: "the account from which the payment was made"
+      type: foreign
+      exp: account_id
+    - name: batch_payment
+      description: "the batch payment if the payment was made as part of a batch"
+      type: foreign
+      exp: batch_payment_id
+    - name: prepayment
+      description: "the prepayment associated with the payment"
+      type: foreign
+      exp: prepayment_id
+    - name: overpayment
+      description: "the overpayment associated with the payment"
+      type: foreign
+      exp: overpayment_id
+  dimensions:
+    - name: date
+      description: "date the payment is being made (YYYY-MM-DD)"
+      type: time
+      expr: date
+      type_params:
+        time_granularity: day
+      satellite: sat_payment
+    - name: currency_rate
+      description: "exchange rate when payment is received. only used for non base currency invoices and credit notes"
+      type: number
+      expr: currency_rate
+      satellite: sat_payment
+    - name: amount
+      description: "the amount of the payment. must be less than or equal to the outstanding amount owing on the invoice"
+      type: number
+      expr: amount
+      satellite: sat_payment
+    - name: bank_amount
+      description: "the amount of the payment in the bank account currency"
+      type: number
+      expr: bank_amount
+      satellite: sat_payment
+    - name: reference
+      description: "an optional description for the payment"
+      type: string
+      expr: reference
+      satellite: sat_payment
+    - name: is_reconciled
+      description: "a flag to indicate whether the payment has been reconciled"
+      type: boolean
+      expr: is_reconciled
+      satellite: sat_payment
+    - name: status
+      description: "the status of the payment"
+      type: string
+      expr: status
+      satellite: sat_payment
+    - name: payment_type
+      description: "the type of the payment"
+      type: string
+      expr: payment_type
+      satellite: sat_payment
+    - name: updated_date_utc
+      description: "UTC timestamp of last update to the payment"
+      type: time
+      expr: updated_date_utc
+      satellite: sat_payment
+    - name: has_account
+      description: "a flag indicating if the payment is associated with an account"
+      type: boolean
+      expr: has_account
+      satellite: sat_payment
+  measures:
+    - name: total_payment_amount
+      description: "the total amount of payments"
+      agg: sum
+      expr: amount
+    - name: total_bank_amount
+      description: "the total amount of payments in bank account currency"
+      agg: sum
+      expr: bank_amount
+    - name: count_payments
+      description: "the number of payments"
+      agg: count_distinct
+      expr: payment_id
+    - name: reconciled_payments_ratio
+      description: "the ratio of reconciled payments to total payments"
+      agg: percentile
+      expr: "(CASE WHEN is_reconciled = TRUE THEN 1 ELSE 0 END) / COUNT(*)"
+  relationships:
+    - name: invoice
+      to_entity: invoice
+      expr: >
+        FROM hub_payment
+        INNER JOIN link_payment_invoice 
+          ON hub_payment.payment_hkey = link_payment_invoice.payment_hkey
+        INNER JOIN hub_invoice
+          ON link_payment_invoice.invoice_hkey = hub_invoice.invoice_hkey
+        LEFT JOIN sat_invoice 
+          ON hub_invoice.invoice_hkey = sat_invoice.invoice_hkey
+    - name: credit_note
+      to_entity: credit_note
+      expr: >
+        FROM hub_payment
+        INNER JOIN link_payment_credit_note
+          ON hub_payment.payment_hkey = link_payment_credit_note.payment_hkey
+        INNER JOIN hub_credit_note 
+          ON link_payment_credit_note.credit_note_hkey = hub_credit_note.credit_note_hkey
+        LEFT JOIN sat_credit_note 
+          ON hub_credit_note.credit_note_hkey = sat_credit_note.credit_note_hkey
+    - name: account
+      to_entity: account
+      expr: >
+        FROM hub_payment
+        INNER JOIN link_payment_account 
+          ON hub_payment.payment_hkey = link_payment_account.payment_hkey
+        INNER JOIN hub_account 
+          ON link_payment_account.account_hkey = hub_account.account_hkey
+        LEFT JOIN sat_account 
+          ON hub_account.account_hkey = sat_account.account_hkey
+    - name: batch_payment
+      to_entity: batch_payment
+      expr: >
+        FROM hub_payment
+        INNER JOIN link_payment_batch 
+          ON hub_payment.payment_hkey = link_payment_batch.payment_hkey
+        INNER JOIN hub_batch_payment 
+          ON link_payment_batch.batch_payment_hkey = hub_batch_payment.batch_payment_hkey
+        LEFT JOIN sat_batch_payment 
+          ON hub_batch_payment.batch_payment_hkey = sat_batch_payment.batch_payment_hkey
+    - name: prepayment
+      to_entity: prepayment
+      expr: >
+        FROM hub_payment
+        INNER JOIN link_payment_prepayment 
+          ON hub_payment.payment_hkey = link_payment_prepayment.payment_hkey
+        INNER JOIN hub_prepayment 
+          ON link_payment_prepayment.prepayment_hkey = hub_prepayment.prepayment_hkey
+        LEFT JOIN sat_prepayment 
+          ON hub_prepayment.prepayment_hkey = sat_prepayment.prepayment_hkey
+    - name: overpayment
+      to_entity: overpayment
+      expr: >
+        FROM hub_payment
+        INNER JOIN link_payment_overpayment 
+          ON hub_payment.payment_hkey = link_payment_overpayment.payment_hkey
+        INNER JOIN hub_overpayment 
+          ON link_payment_overpayment.overpayment_hkey = hub_overpayment.overpayment_hkey
+        LEFT JOIN sat_overpayment ON hub_overpayment.overpayment_hkey = sat_overpayment.overpayment_hkey
+  filters:
+    - name: authorised_payments
+      description: "filter for authorised payments only"
+      expr: "status = 'AUTHORISED'"
+    - name: accrecpayment_type
+      description: "filter for ACCRECPAYMENT payment type"
+      expr: "payment_type = 'ACCRECPAYMENT'"
+    - name: recent_payments
+      description: "filter for payments in the last 30 days"
+      expr: "date >= DATE_SUB(CURRENT_DATE(), INTERVAL 30 DAY)"
