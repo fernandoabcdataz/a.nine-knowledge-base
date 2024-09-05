@@ -9,6 +9,6 @@ variable "region" {
 }
 
 variable "project_owner_email" {
-  description = "Email address of the project owner"
+  description = "email address of the project owner"
   type        = string
 }
