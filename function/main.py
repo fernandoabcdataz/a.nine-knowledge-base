@@ -1,7 +1,7 @@
 import os
-from google.cloud import storage, bigquery
+from google.cloud import storage, bigquery, secretmanager
 from langchain.llms import Anthropic
-from langchain.embeddings import AnthropicEmbeddings  # Add this import
+from langchain.embeddings import AnthropicEmbeddings
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 import functions_framework
 import yaml
@@ -9,14 +9,16 @@ import yaml
 # initialize clients
 storage_client = storage.Client()
 bigquery_client = bigquery.Client()
+secret_client = secretmanager.SecretManagerServiceClient()
 
-# initialize anthropic api key
-anthropic_api_key = os.environ.get("ANTHROPIC_API_KEY")
+# get anthropic api key from secret manager
+project_id = os.environ.get("GCP_PROJECT")
+secret_name = "projects/{}/secrets/{}/versions/latest".format(project_id, "anthropic-api-key")
+response = secret_client.access_secret_version(request={"name": secret_name})
+anthropic_api_key = response.payload.data.decode("UTF-8")
 
-# initialize anthropic llm
-llm = Anthropic(model="claude-2.1", api_key=anthropic_api_key)  # specify the model
-
-# initialize anthropic embeddings
+# initialize anthropic llm and embeddings
+llm = Anthropic(model="claude-2.1", api_key=anthropic_api_key)
 embeddings = AnthropicEmbeddings(model="claude-2.1", api_key=anthropic_api_key)
 
 # initialize text splitter
@@ -30,16 +32,16 @@ def process_yaml_file(bucket_name, file_name):
     entity_name = semantic_model['semantic_model']['name']
     return entity_name, yaml.dump(semantic_model)
 
-@functions_framework.cloud_event
-def upload_knowledge_base(cloud_event):
-    # get bucket and file information from the event
-    bucket_name = cloud_event.data["bucket"]
-    file_name = cloud_event.data["name"]
+@functions_framework.http
+def upload_knowledge_base(request):
+    # Get bucket and file information from the request
+    data = request.get_json()
+    bucket_name = data["bucket"]
+    file_name = data["name"]
 
     # process only yaml files
     if not file_name.endswith('.yaml'):
-        print(f"Skipping non-YAML file: {file_name}")
-        return
+        return f"skipping non-YAML file: {file_name}", 200
 
     # process the yaml file
     entity_name, yaml_content = process_yaml_file(bucket_name, file_name)
@@ -82,15 +84,6 @@ def upload_knowledge_base(cloud_event):
     errors = bigquery_client.insert_rows_json(table_ref, rows_to_insert)
 
     if errors == []:
-        print(f"Successfully uploaded embeddings for {entity_name} to BigQuery")
+        return f"successfully uploaded embeddings for {entity_name} to BigQuery", 200
     else:
-        print(f"Errors occurred while uploading embeddings for {entity_name}: {errors}")
-
-if __name__ == "__main__":
-    # for local testing
-    class MockCloudEvent:
-        def __init__(self, bucket, name):
-            self.data = {"bucket": bucket, "name": name}
-
-    mock_event = MockCloudEvent("abcdataz_knowledge_base", "example.yaml")
-    upload_knowledge_base(mock_event)
+        return f"errors occurred while uploading embeddings for {entity_name}: {errors}", 500
