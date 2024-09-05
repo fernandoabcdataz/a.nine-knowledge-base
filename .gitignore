@@ -60,3 +60,5 @@ terraform.rc
 *.bak
 *.swp
 *~
+
+myenv/
