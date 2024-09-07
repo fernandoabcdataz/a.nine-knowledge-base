@@ -1,0 +1,235 @@
+semantic_model:
+  name: invoices
+  description: >
+    retrieve sales invoices or purchase bills, create sales invoices or purchase bills,
+    update draft or submitted sales invoices or purchase bills, delete draft sales invoices or purchase bills,
+    void approved sales invoices or purchase bills, retrieve the online invoice URL for sales invoices,
+    attach files to sales invoices or purchase bills, email sales invoices, retrieve history for invoices and purchase bills,
+    add notes to invoices and purchase bills.
+  grain: invoice_id
+  business_keys:
+    - name: invoice_id
+      column: invoice_id
+  entities:
+    - name: invoice
+      description: "a unique invoice for sales or purchase"
+      type: primary
+      exp: invoice_id
+    - name: contact
+      description: "the contact associated with the invoice"
+      type: foreign
+      exp: contact_id
+    - name: payment
+      description: "the payment associated with the invoice"
+      type: foreign
+      exp: payment_id
+    - name: credit_note
+      description: "the credit note associated with the invoice"
+      type: foreign
+      exp: credit_note_id
+    - name: prepayment
+      description: "the prepayment associated with the invoice"
+      type: foreign
+      exp: prepayment_id
+    - name: overpayment
+      description: "the overpayment associated with the invoice"
+      type: foreign
+      exp: overpayment_id
+  dimensions:
+    - name: date
+      description: "date the invoice was issued (YYYY-MM-DD)"
+      type: time
+      expr: date
+      type_params:
+        time_granularity: day
+      satellite: sat_invoice
+    - name: due_date
+      description: "date the invoice is due (YYYY-MM-DD)"
+      type: time
+      expr: due_date
+      type_params:
+        time_granularity: day
+      satellite: sat_invoice
+    - name: status
+      description: "the status of the invoice"
+      type: string
+      expr: status
+      satellite: sat_invoice
+    - name: line_amount_types
+      description: "the line amount types of the invoice"
+      type: string
+      expr: line_amount_types
+      satellite: sat_invoice
+    - name: sub_total
+      description: "total of invoice excluding taxes"
+      type: number
+      expr: sub_total
+      satellite: sat_invoice
+    - name: total_tax
+      description: "total tax on invoice"
+      type: number
+      expr: total_tax
+      satellite: sat_invoice
+    - name: total
+      description: "total of invoice tax inclusive (i.e. SubTotal + TotalTax)"
+      type: number
+      expr: total
+      satellite: sat_invoice
+    - name: total_discount
+      description: "total of discounts applied on the invoice line items"
+      type: number
+      expr: total_discount
+      satellite: sat_invoice
+    - name: updated_date_utc
+      description: "UTC timestamp of last update to the invoice"
+      type: time
+      expr: updated_date_utc
+      satellite: sat_invoice
+    - name: currency_code
+      description: "the currency that invoice has been raised in"
+      type: string
+      expr: currency_code
+      satellite: sat_invoice
+    - name: currency_rate
+      description: "the currency rate for a multicurrency invoice"
+      type: number
+      expr: currency_rate
+      satellite: sat_invoice
+    - name: invoice_number
+      description: "unique alpha numeric code identifying invoice"
+      type: string
+      expr: invoice_number
+      satellite: sat_invoice
+    - name: reference
+      description: "additional reference number"
+      type: string
+      expr: reference
+      satellite: sat_invoice
+    - name: branding_theme_id
+      description: "branding theme ID"
+      type: string
+      expr: branding_theme_id
+      satellite: sat_invoice
+    - name: url
+      description: "URL link to a source document"
+      type: string
+      expr: url
+      satellite: sat_invoice
+    - name: sent_to_contact
+      description: "boolean to indicate whether the invoice is sent"
+      type: boolean
+      expr: sent_to_contact
+      satellite: sat_invoice
+    - name: expected_payment_date
+      description: "expected payment date for sales invoices"
+      type: time
+      expr: expected_payment_date
+      type_params:
+        time_granularity: day
+      satellite: sat_invoice
+    - name: planned_payment_date
+      description: "planned payment date for bills"
+      type: time
+      expr: planned_payment_date
+      type_params:
+        time_granularity: day
+      satellite: sat_invoice
+    - name: has_attachments
+      description: "boolean to indicate if an invoice has an attachment"
+      type: boolean
+      expr: has_attachments
+      satellite: sat_invoice
+    - name: repeating_invoice_id
+      description: "identifier for repeating invoice template"
+      type: string
+      expr: repeating_invoice_id
+      satellite: sat_invoice
+    - name: amount_due
+      description: "amount remaining to be paid on invoice"
+      type: number
+      expr: amount_due
+      satellite: sat_invoice
+    - name: amount_paid
+      description: "sum of payments received for invoice"
+      type: number
+      expr: amount_paid
+      satellite: sat_invoice
+    - name: amount_credited
+      description: "sum of all credit notes, over-payments and pre-payments applied to invoice"
+      type: number
+      expr: amount_credited
+      satellite: sat_invoice
+  measures:
+    - name: total_invoice_amount
+      description: "the total amount of invoices"
+      agg: sum
+      expr: total
+    - name: total_amount_due
+      description: "the total amount due on invoices"
+      agg: sum
+      expr: amount_due
+    - name: count_invoices
+      description: "the number of invoices"
+      agg: count_distinct
+      expr: invoice_id
+  relationships:
+    - name: contact
+      to_entity: contact
+      expr: >
+        FROM hub_invoice
+        INNER JOIN link_invoice_contact 
+          ON hub_invoice.invoice_hkey = link_invoice_contact.invoice_hkey
+        INNER JOIN hub_contact 
+          ON link_invoice_contact.contact_hkey = hub_contact.contact_hkey
+        LEFT JOIN sat_contact 
+          ON hub_contact.contact_hkey = sat_contact.contact_hkey
+    - name: payment
+      to_entity: payment
+      expr: >
+        FROM hub_invoice
+        INNER JOIN link_invoice_payment 
+          ON hub_invoice.invoice_hkey = link_invoice_payment.invoice_hkey
+        INNER JOIN hub_payment 
+          ON link_invoice_payment.payment_hkey = hub_payment.payment_hkey
+        LEFT JOIN sat_payment 
+          ON hub_payment.payment_hkey = sat_payment.payment_hkey
+    - name: credit_note
+      to_entity: credit_note
+      expr: >
+        FROM hub_invoice
+        INNER JOIN link_invoice_credit_note 
+          ON hub_invoice.invoice_hkey = link_invoice_credit_note.invoice_hkey
+        INNER JOIN hub_credit_note 
+          ON link_invoice_credit_note.credit_note_hkey = hub_credit_note.credit_note_hkey
+        LEFT JOIN sat_credit_note 
+          ON hub_credit_note.credit_note_hkey = sat_credit_note.credit_note_hkey
+    - name: prepayment
+      to_entity: prepayment
+      expr: >
+        FROM hub_invoice
+        INNER JOIN link_invoice_prepayment 
+          ON hub_invoice.invoice_hkey = link_invoice_prepayment.invoice_hkey
+        INNER JOIN hub_prepayment 
+          ON link_invoice_prepayment.prepayment_hkey = hub_prepayment.prepayment_hkey
+        LEFT JOIN sat_prepayment 
+          ON hub_prepayment.prepayment_hkey = sat_prepayment.prepayment_hkey
+    - name: overpayment
+      to_entity: overpayment
+      expr: >
+        FROM hub_invoice
+        INNER JOIN link_invoice_overpayment 
+          ON hub_invoice.invoice_hkey = link_invoice_overpayment.invoice_hkey
+        INNER JOIN hub_overpayment 
+          ON link_invoice_overpayment.overpayment_hkey = hub_overpayment.overpayment_hkey
+        LEFT JOIN sat_overpayment 
+          ON hub_overpayment.overpayment_hkey = sat_overpayment.overpayment_hkey
+  filters:
+    - name: authorised_invoices
+      description: "filter for authorised invoices only"
+      expr: "status = 'AUTHORISED'"
+    - name: accrec_invoice_type
+      description: "filter for ACCREC invoice type"
+      expr: "type = 'ACCREC'"
+    - name: recent_invoices
+      description: "filter for invoices in the last 30 days"
+      expr: "date >= DATE_SUB(CURRENT_DATE(), INTERVAL 30 DAY)"
