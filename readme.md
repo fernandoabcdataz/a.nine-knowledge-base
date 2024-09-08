@@ -1,80 +1,115 @@
-# AI Assistant Knowledge Base
+# AI Knowledge Base Processor
 
-This project sets up a knowledge base for an AI assistant using Google Cloud Platform (GCP) services. It includes a Cloud Function that processes YAML files stored in Cloud Storage, generates embeddings using the Anthropic API, and stores the results in BigQuery.
+This project processes YAML files containing semantic models for an AI knowledge base. It extracts information from the YAML files, generates embeddings using OpenAI's API, and stores the results in Google BigQuery.
 
 ## Project Structure
 
 ```
 A.NINE-KNOWLEDGE-BASE/
-├── function/
+│
+├── code/
+│   ├── __pycache__/
+│   ├── Dockerfile
 │   ├── main.py
 │   └── requirements.txt
+│
 ├── knowledge-base/
+│   ├── xero_invoices.yaml
 │   └── xero_payments.yaml
-├── terraform/
-│   ├── main.tf
-│   ├── terraform.tfvars
-│   └── variables.tf
-└── .gitignore
+│
+├── myenv/
+├── .env
+├── .gitignore
+├── readme.md
+└── service-account.json
 ```
 
-## Setup
+## Dockerfile
 
-1. Ensure you have the following prerequisites:
-   - Google Cloud Platform account
-   - Terraform installed
-   - gcloud CLI installed and configured
+The Dockerfile sets up a Python 3.9 environment and installs the necessary dependencies to run the application.
 
-2. Clone this repository and navigate to the project directory.
+```dockerfile
+FROM python:3.9-slim
 
-3. Set up your GCP project and enable the necessary APIs:
-   - Cloud Functions API
-   - Cloud Build API
-   - Secret Manager API
-   - BigQuery API
-   - Cloud Storage API
+WORKDIR /app
 
-4. Create a service account with the necessary permissions and download the JSON key.
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
-5. Set the `GOOGLE_APPLICATION_CREDENTIALS` environment variable to the path of your service account key:
-   ```
-   export GOOGLE_APPLICATION_CREDENTIALS=/path/to/your/service-account-key.json
-   ```
+COPY main.py .
 
-6. Update the `terraform.tfvars` file with your project-specific values.
+ENV PORT=8080
 
-7. Initialize Terraform and apply the configuration:
-   ```
-   cd terraform
-   terraform init
-   terraform apply
-   ```
+CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "1", "--threads", "8", "--timeout", "0", "main:app"]
+```
 
-8. After the Terraform apply completes successfully, the Cloud Function will be deployed and ready to use.
+## Main Application (main.py)
+
+The main.py file contains a Flask application that:
+
+1. Initializes Google Cloud clients (Storage, BigQuery, Secret Manager)
+2. Retrieves the OpenAI API key from Secret Manager
+3. Processes YAML files from a specified Google Cloud Storage bucket
+4. Generates embeddings for the content using OpenAI's API
+5. Stores the embeddings and related information in BigQuery
+
+## Requirements
+
+The application requires the following Python packages:
+
+- Flask
+- google-cloud-storage
+- google-cloud-secret-manager
+- google-cloud-bigquery
+- langchain
+- langchain-openai
+- pyyaml
+- gunicorn
+- openai
 
 ## Usage
 
-The Cloud Function is triggered by HTTP requests. To process a YAML file:
-
-1. Upload a YAML file to the created Cloud Storage bucket.
-2. Send an HTTP POST request to the Cloud Function URL with the following JSON payload:
-   ```json
-   {
-     "bucket": "your-bucket-name",
-     "name": "your-file-name.yaml"
-   }
+1. Build the Docker image:
+   ```
+   docker build -t ai-knowledge-base-processor .
    ```
 
-The function will process the YAML file, generate embeddings, and store the results in BigQuery.
+2. Run the container:
+   ```
+   docker run -p 8080:8080 -e GCP_PROJECT=your-project-id ai-knowledge-base-processor
+   ```
 
-## Maintenance
+3. The application will process YAML files in the specified Google Cloud Storage bucket when triggered via the `/run` endpoint.
 
-- To update the Cloud Function code, modify the files in the `function/` directory and re-run `terraform apply`.
-- To add new YAML files to the knowledge base, upload them to the Cloud Storage bucket and trigger the Cloud Function.
-- Monitor the Cloud Function logs and BigQuery table for any issues or unexpected results.
+## Environment Variables
 
-## Security Considerations
+- `GCP_PROJECT`: Your Google Cloud Project ID
+- `BIGQUERY_DATASET`: The BigQuery dataset to use (default: 'knowledge_base')
+- `BIGQUERY_TABLE`: The BigQuery table to use (default: 'semantic_model_vector')
+- `STORAGE_BUCKET`: The Google Cloud Storage bucket containing the YAML files (default: 'ai-assistant-knowledge-base')
 
-- The Anthropic API key is stored in Secret Manager. Ensure that access to this secret is tightly controlled.
-- The Cloud Function is publicly accessible. Consider implementing authentication if needed.
-- Review and adjust the IAM permissions regularly to ensure least privilege access.
+## YAML File Structure
+
+The YAML files in the knowledge-base directory should follow a specific structure defining semantic models. Here's a simplified example:
+
+```yaml
+semantic_model:
+  name: invoices
+  description: "Description of the invoices model"
+  grain: invoice_id
+  business_keys:
+    - name: invoice_id
+      column: invoice_id
+  entities:
+    - name: invoice
+      description: "A unique invoice for sales or purchase"
+      type: primary
+      exp: invoice_id
+  # ... (dimensions, measures, relationships, filters)
+```
+
+## Notes
+
+- Ensure that the necessary Google Cloud APIs are enabled for your project.
+- The application uses a service account for authentication. Make sure the service account has the required permissions.
+- The OpenAI API key is stored in Google Secret Manager for security.
